@@ -1,0 +1,11 @@
+nodejs版本 18+
+
+同步数据库结构：
+node bin/tools/syncDatabase
+
+复制文件 .env.example 改名为 .env 
+请不要修改配置文件中的 clientSeed 跟 RABBITMQ SERVER
+
+启动程序：
+pm2 start bin/frontend
+pm2 start bin/energyUpdater

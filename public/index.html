@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram 登录示例</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <script>
+      // 确保Telegram对象存在
+      if(window.Telegram){
+        // 初始化完成后的操作
+        window.Telegram.WebApp.ready();
+        // 将WebAppUser对象转换为JSON字符串
+        var userJson = JSON.stringify(window.Telegram.WebApp.WebAppUser);
+        // 创建一个元素来显示JSON
+        var pre = document.createElement('pre');
+        pre.textContent = userJson;
+        document.body.appendChild(pre);
+      }
+    </script>
+</body>
+</html>

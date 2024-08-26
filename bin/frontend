@@ -1,0 +1,89 @@
+
+const Hapi = require('@hapi/hapi');
+const jwt = require('../libary/hapiJwt');
+const proto = require('../libary/hapiProto');
+const ext = require('../libary/hapiExt')
+const config = require("../config");
+const redis = require('../databases/redis');
+const socketIo = require('../libary/hapiSocketIo');
+const uuid = require('uuid');
+const { listenForMessages } = require('../databases/rabbitmq/client');
+
+const routerList = require('../routers/websocket/index');
+
+process.uuid = uuid.v4();
+
+const init = async () => {
+    const server = Hapi.server({
+        port: config.server.frontend.port,
+        host: config.server.frontend.host,
+        debug: config.DEBUG ? {
+            log: "*",
+            request: ['error']
+        } : false,
+        state: {
+            strictHeader: false,
+            isHttpOnly: true,
+        },
+    });
+    await server.register(jwt);
+
+    await server.register(socketIo);
+    /** auth */
+    server.auth.strategy('jwt', 'jwt',
+        {
+            key: config.server.frontend.jwtKey,
+            validate: async (decoded, request, h) => {
+                let result = {
+                    isValid: true,
+                }
+
+                let isLogin = await redis.hasLogin(decoded.userId, decoded.loginId);
+                if (!isLogin) {
+                    result.isValid = false;
+                    result.errorMessage = "Token is expired"
+                }
+                if (Date.now() - decoded.loginTime > 90 * 864 * 1e5) {
+                    result.isValid = false;
+                    result.errorMessage = "invalid token"
+                }
+                result.credentials = decoded;
+                return result;
+            },
+        });
+
+
+    server.auth.default('jwt');
+    await server.register(ext);
+    await server.register(proto);
+    /** routers */
+    await server.register({
+        plugin: require('hapi-i18n'),
+        options: config.i18n
+    });
+    server.route(routerList);
+
+    server.events.on('response', function (request) {
+        console.log(request.info.ipaddr + " : " + request.method.toUpperCase() + ' ' + request.path + ' --> ' + request.response.statusCode);
+        console.log(request.response.source);
+    });
+
+    await Promise.all([
+        server.start(),
+        redis.createProcess(),
+        listenForMessages()
+    ]);
+    return server;
+};
+
+process.on('unhandledRejection', (err) => {
+    console.error(err);
+    // process.exit(1);
+});
+
+init().then(server => {
+    console.log('Server running at:', server.info.uri);
+})
+    .catch(err => {
+        console.log(err);
+    });

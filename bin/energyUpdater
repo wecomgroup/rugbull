@@ -1,0 +1,78 @@
+const db = require('../databases/mysql');
+const emit = require('../libary/socketEmit');
+const rq = require('../databases/rabbitmq/magic_cards');
+const { Op } = require("sequelize");
+const CardExpirationInfo = require('../databases/rabbitmq/model/card_expiration_info');
+const { logger } = require('../libary/logs2');
+const logs = new logger({
+    service: "energyUpdater"
+});
+
+
+async function main() {
+    await rq.lisenJob(async (msg, ch) => {
+        if (msg !== null) {
+            const messageContent = msg.content.toString();
+            try {
+                const parsedMessage = JSON.parse(messageContent);
+
+                const cardExpirationInfo = new CardExpirationInfo(
+                    parsedMessage.userId,
+                    parsedMessage.cardId,
+                    parsedMessage.purchaseTime,
+                    parsedMessage.expirationTime
+                );
+                logs.info('Received message:', {cardExpirationInfo});
+
+                const card = await db.magic_cards.findOne({
+                    where: {rowId: cardExpirationInfo.cardId}
+                });
+
+                if (!card) {
+                    throw new Error(`Card with id ${cardExpirationInfo.cardId} not found`);
+                }
+
+                // Query the users_magic_card_totals for the specific user and card type
+                const userTotals = await db.users_magic_card_totals.findOne({
+                    where: {
+                        userId: cardExpirationInfo.userId,
+                        type: card.type
+                    }
+                });
+
+                if (!userTotals) {
+                    throw new Error(`No totals found for user ${cardExpirationInfo.userId} and card type ${card.type}`);
+                }
+
+                const expirationTime = new Date(userTotals.totalExpirationTime);
+                const now = new Date();
+
+                // Determine if the totals have expired
+                if (expirationTime <= now) {
+                    if (card.type === 'Speed up') {
+                        await db.users_energy.update(
+                            { energyAccumulationRate: 1 },
+                            { where: { rowId: cardExpirationInfo.userId } }
+                        );
+                        logs.info(`Energy accumulation rate updated to 1 for user ${cardExpirationInfo.userId}`);
+                    } else if (card.type === 'Double winning') {
+                        await db.users_wallet.update(
+                            { winMultiplier: 1 },
+                            { where: { rowId: cardExpirationInfo.userId } }
+                        );
+                        logs.info(`Win multiplier updated to 1 for user ${cardExpirationInfo.userId}`);
+                    }
+                } else {
+                    logs.info(`Totals for user ${cardExpirationInfo.userId} and type ${card.type} have not expired, no update performed`);
+                }
+
+                ch.ack(msg);
+            } catch (error) {
+                logs.error('Error updating energy accumulation rate or win multiplier:', error);
+                ch.nack(msg, false, false); // Reject the message and do not requeue it
+            }
+        }
+    });
+}
+
+main();

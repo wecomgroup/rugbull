@@ -1,0 +1,92 @@
+const config = require('../config');
+const routes = require('../routers/telegram');
+const db = require('../databases/mysql');
+const ioredis = require('../databases/redis');
+const i18n = require('../libary/i18n');
+const { logger } = require('../libary/logs2');
+const logs = new logger({ service: "bot_listen" });
+const Bot = require('../libary/telegram');
+const watch = require('../routers/telegram/watch');
+const bot = new Bot(config.bot.token, { polling: true });
+const callback = require('../routers/telegram/callback');
+
+try {
+    bot.getMe().then(botInfo => {
+        Promise.all([
+            db.bot_info.upsert(botInfo),
+            bot.setCommand(routes),
+        ]);
+        bot.on('message', async (msg) => {
+            const languageCode=i18n.detectLocaleFromAcceptedLanguages(bot.getLanguageCode(msg));
+            i18n.setLocale(languageCode);
+            i18n.t = i18n.__;
+            msg.i18n = i18n;
+            msg.bot_info = botInfo;
+            logs.debug(msg.text, msg);
+            // 离开群组
+            if (msg.left_chat_participant) {
+                if (msg.left_chat_participant.username == botInfo.username) {
+                    await db.users_group.destroy({
+                        group_id: msg.chat.id,
+                    });
+                    return false;
+                }
+            }
+            // 进入群组
+            if (msg.new_chat_participant) {
+                if (msg.new_chat_participant.username == botInfo.username) {
+                    // 检查用户是否已授权
+                    const userInfo = await ioredis.findById(msg.from.id);
+                    if (!userInfo) {
+                        bot.leaveChat(msg.chat.id).then(() => {
+                            logs.debug('Bot left the group successfully.', msg);
+                        })
+                            .catch((error) => {
+                                logs.error('Failed to leave the group:', error.message);
+                            });
+                    } else {
+                        await db.users_group.create({
+                            userId: msg.from.id,
+                            group_id: msg.chat.id,
+                            status: 1,
+                        });
+                    }
+                    return false;
+                }
+            }
+            // 监听等待输入
+            const action = await ioredis.isWatchMessage(msg.bot_info.id, msg.chat.id, msg.message_id);
+            if (action) {
+                await watch[action].handler(msg);
+            }
+            // 数学计算
+            if (/^\d+[-+*/()\d\s.]+$/.test(msg.text)) {
+                bot.operation(msg);
+            }
+            return true;
+        });
+        for (let item of routes) {
+            bot.onText(item.path, item.handler.bind(bot));
+        }
+        bot.on('callback_query', (callbackQuery) => {
+            const message = callbackQuery.message;
+            const data = callbackQuery.data;
+            const { action, params } = JSON.parse(data);
+            if (Object.keys(callback).includes(action)) {
+                try {
+                    callback[action].handler(message, params, callbackQuery);
+                } catch (error) {
+                    logs.error(error.message, {
+                        message, data, stack: error.stack
+                    })
+                }
+            } else {
+                // 
+            }
+        });
+    })
+} catch (error) {
+    logs.error(error.message, {
+        stack: error.stack
+    });
+}

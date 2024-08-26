@@ -1,0 +1,38 @@
+{
+  "name": "rugbull_sevices",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build_db": "npx sequelize-auto -h 20.2.216.8 -d rugbull -u rugbull -x 123123 -p 3306  -c config/ -o databases/mysql/models"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@hapi/hapi": "^21.3.2",
+    "@hapi/inert": "^7.1.0",
+    "@hapi/joi": "^17.1.1",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "@telegram-auth/server": "^1.0.3",
+    "amqplib": "^0.10.4",
+    "bcrypt": "^5.1.1",
+    "date-format-lite": "^17.7.0",
+    "dotenv": "^16.4.5",
+    "google-protobuf": "^3.21.2",
+    "hapi-i18n": "^3.0.1",
+    "i18next": "^23.7.18",
+    "ioredis": "^5.3.2",
+    "joi": "^17.12.3",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.9.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "punycode": "^2.3.1",
+    "sequelize": "^6.37.1",
+    "socket.io": "^4.7.4"
+  },
+  "devDependencies": {
+    "sequelize-auto": "^0.8.8"
+  }
+}
